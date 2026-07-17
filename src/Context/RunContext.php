@@ -15,21 +15,50 @@ class RunContext
     /**
      * @param  array<string, mixed>  $metadata
      */
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @param  list<string>  $ancestry  underlying agent identities on the delegation chain
+     */
     public function __construct(
         public string $runId,
         public mixed $actor = null,
         public ?string $nodeRef = null,
         public ?string $nodeLabel = null,
         public array $metadata = [],
+        public int $delegationDepth = 0,
+        public array $ancestry = [],
     ) {}
 
     public function forNode(string $ref, ?string $label = null): self
     {
-        return new self($this->runId, $this->actor, $ref, $label, $this->metadata);
+        return new self($this->runId, $this->actor, $ref, $label, $this->metadata, $this->delegationDepth, $this->ancestry);
     }
 
     /**
-     * @return array{run_id: string, actor: mixed, node_ref: ?string, node_label: ?string, metadata: array<string, mixed>}
+     * Descend one delegation level — the child run this one spawns, targeting an agent
+     * identity. Depth increments (bounds the *count* of nested spawns) and the target
+     * joins the ancestry (bounds *re-entrancy*). Keyed on the underlying **agent
+     * identity** — never a Conduit id (two Conduits may wrap one agent → an undetected
+     * cycle) nor the ephemeral run id (A→A would never trip). The guard checks the
+     * bounds *before* descending (see the host's `DelegationGuard`).
+     *
+     * @return self
+     */
+    public function descend(string $agentIdentity): self
+    {
+        return new self(
+            $this->runId,
+            $this->actor,
+            $this->nodeRef,
+            $this->nodeLabel,
+            $this->metadata,
+            $this->delegationDepth + 1,
+            [...$this->ancestry, $agentIdentity],
+        );
+    }
+
+    /**
+     * @return array{run_id: string, actor: mixed, node_ref: ?string, node_label: ?string, metadata: array<string, mixed>, delegation_depth: int, ancestry: list<string>}
      */
     public function toArray(): array
     {
@@ -39,6 +68,8 @@ class RunContext
             'node_ref' => $this->nodeRef,
             'node_label' => $this->nodeLabel,
             'metadata' => $this->metadata,
+            'delegation_depth' => $this->delegationDepth,
+            'ancestry' => $this->ancestry,
         ];
     }
 }
